@@ -1,0 +1,272 @@
+{
+  "name": "Generic QBO Chat AI",
+  "nodes": [
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body.message }}",
+        "options": {
+          "systemMessage": "=You are a QBO expert AI. Based on the question, identify if data should be pulled from:\n\nTransaction List\n\nBalance Sheet\n\nP&L\n\nCredit Card account register\nRespond with exact report name and filters.”\n\nFor every distinct report or data entity the user asks for, return one JSON object inside an array.\nYour job is to:\n\nUnderstand and interpret the user’s queries.\n\nDetect multiple intents in the same sentence (e.g. “Give me the P&L and Balance Sheet for last quarter”).\n\nIdentify the corresponding QuickBooks Online API action (like a report or data entity).\n\nExtract and normalize inputs like:\n\nDate ranges (absolute or relative like “last quarter”)\n\nFilters (e.g., customer name, vendor, currency, location)\n\n🧠 Support Custom Aliases:\n Action Aliases → Valid Canonical Actions\nAliases (user input)\tCanonical action\nP&L, PL, pnl\tProfitAndLoss\nBS, B/S\tBalanceSheet\nCF\tCashFlow\nTB\tTrialBalance\nGL\tGeneralLedger\ninvoices\tlistInvoices\nbills\tbillList\nvendors\tvendors\ncustomers\tcustomers\naccounts\taccounts\ncreate invoice\tcreateInvoice\nget invoice\tgetInvoice\npayments\tpayments\n\n❌ Do not generate any actions that are not listed above.\n\n✅ Examples of Relative Date Normalization:\nUser Input\tStart Date\tEnd Date\nthis month / current month\t2025-06-01\t2025-06-30\nlast month / previous month\t2025-05-01\t2025-05-31\nnext month\t2025-07-01\t2025-07-31\nthis year / current year\t2025-01-01\t2025-06-30\nlast year / previous year\t2024-01-01\t2024-12-31\nnext year\t2026-01-01\t2026-12-31\nthis quarter\t2025-04-01\t2025-06-30\nlast quarter\t2025-01-01\t2025-03-31\nnext quarter\t2025-07-01\t2025-09-30\nquarter to date\t2025-04-01\t2025-06-30\nyear to date\t2025-01-01\t2025-06-30\n\n📅 You must calculate actual dates based on today's date (currently July 3, 2025).\n\n✅ Output JSON Format\n[\n  {\n    \"action\": \"ProfitAndLoss\",\n    \"date_range\": {\n      \"start_date\": \"2025-04-01\",\n      \"end_date\": \"2025-06-30\",\n    },\n    \"filters\": {\n      \"customer\": \"Acme Inc\",\n      \"vendor\": \"\",\n      \"currency\": \"USD\",\n      \"location\": \"\"\n    },\n    \"notes\": \"User requested P&L for this quarter in USD filtered by customer Acme Inc\"\n  },\n  {\n    \"action\": \"BalanceSheet\",\n    \"date_range\": {\n      \"start_date\": \"2025-04-01\",\n      \"end_date\": \"2025-06-30\",\n    },\n    \"filters\": {\n      \"customer\": \"\",\n      \"vendor\": \"\",\n      \"currency\": \"USD\",\n      \"location\": \"\"\n    },\n    \"notes\": \"User requested Balance Sheet for this quarter in USD\"\n  }\n]\n\n🔍 Example Inputs to Test:\n\"Get me the P&L for the last quarter in PKR\"\n\n\"Balance sheet of March 2023\"\n\n\"Show invoices for customer Jane for the past 60 days\"\n\n\"GL report for this month\"\n\n🗂 Supported QBO Entities\n\nReports → ProfitAndLoss, BalanceSheet, CashFlow, TrialBalance, GeneralLedger\nLists/Transactions → Customers, Vendors, Accounts, ListInvoices, BillList, Payments, GetInvoice, CreateInvoice\n\n🔎 Example Queries & Expected Shape\nInput: “Show me P&L and BS for last quarter in USD.”\nOutput:\n[\n  {\n    \"action\": \"ProfitAndLoss\",\n    \"date_range\": { \"start_date\": \"2025-04-01\",\n      \"end_date\": \"2025-06-30\" },\n    \"filters\": { \"currency\": \"USD\" },\n    \"notes\": \"User requested P&L for last quarter in USD\"\n  },\n  {\n    \"action\": \"BalanceSheet\",\n    \"date_range\": { \"start_date\": \"2025-04-01\",\n      \"end_date\": \"2025-06-30\" },\n    \"filters\": { \"currency\": \"USD\" },\n    \"notes\": \"User requested Balance Sheet for last quarter in USD\"\n  }\n]\n\nONLY RETURN JSON NOTHING ELSE.\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.8,
+      "position": [
+        20,
+        -380
+      ],
+      "id": "d6d8d8b8-4ffb-49ae-b270-22d259e6c8ea",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input: AI agent's structured JSON in `items[0].json`\n// Output: QBO API endpoint with query string\n\n\n\n/**\n * Input: The AI‑agent output stored in items[0].json  (an array of objects)\n * Output: One n8n item per requested action, each with the ready‑to‑call QBO URL\n */\n\nconst requests = JSON.parse($input.first().json.output);   // AI returned array, not a single object\nconst baseUrl = 'https://sandbox-quickbooks.api.intuit.com/v3/company/{{companyID}}/';\n\nconst reportEndpoints = {\n  ProfitAndLoss: 'reports/ProfitAndLoss',\n  BalanceSheet:  'reports/BalanceSheet',\n  CashFlow:      'reports/CashFlow',\n  TrialBalance:  'reports/TrialBalance',\n  GeneralLedger: 'reports/GeneralLedger',\n  TransactionList: 'reports/TransactionList'\n};\n\nconst listEndpoints = {\n  customers:  'customer',\n  vendors:    'vendor',\n  accounts:   'account',\n  listInvoices: 'invoice',\n  billList:     'bill',\n  payments:     'payment',\n  getInvoice:   'invoice/{{invoiceId}}',\n  createInvoice:'invoice',\n};\n\nconst outputItems = [];\n\nfor (const req of requests) {\n\n  let endpoint = reportEndpoints[req.action] || listEndpoints[req.action];\n  if (!endpoint) {\n    throw new Error(`Unsupported action: ${req.action}`);\n  }\n\n  // ---------- Build query string ----------\n  const qp = [];\n\n  if (req.date_range) {\n    const { start_date, end_date, relative_term } = req.date_range;\n    if (start_date && end_date) {\n      qp.push(`start_date=${start_date}`, `end_date=${end_date}`);\n    } else if (relative_term) {\n      qp.push(`date_macro=${relative_term}`);\n    }\n  }\n\n  if (req.filters) {\n    const f = req.filters;\n    if (f.customer)  qp.push(`customer=${encodeURIComponent(f.customer)}`);\n    if (f.vendor)    qp.push(`vendor=${encodeURIComponent(f.vendor)}`);\n    if (f.currency)  qp.push(`currency=${encodeURIComponent(f.currency)}`);\n    if (f.location)  qp.push(`location=${encodeURIComponent(f.location)}`);\n  }\n\n  const url = `${baseUrl}${endpoint}${qp.length ? '?' + qp.join('&') : ''}`;\n\n  outputItems.push({\n    json: {\n      action: req.action,\n      url,\n      notes: req.notes || ''\n    }\n  });\n}\n\nreturn outputItems;\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -380
+      ],
+      "id": "be44e307-2092-49f2-9777-d0d7437b6bd3",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "quickBooksOAuth2Api",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        -180
+      ],
+      "id": "34ce0de4-4bd5-46c6-8ec4-746546231d94",
+      "name": "HTTP Request",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Webhook').item.json.body.message }}",
+        "options": {
+          "systemMessage": "=You will receive two or more items separately in an array, handle both separately and generate result according to following prompt dont show json in output it should display proper data in tables\n{{ $('Loop Over Items').all().toJsonString() }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.8,
+      "position": [
+        1060,
+        -440
+      ],
+      "id": "c97b3877-ae0e-4509-b6b9-e6046595f23b",
+      "name": "AI Agent1",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "batchSize": "={{ JSON.parse($('AI Agent').item.json.output).length }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        580,
+        -380
+      ],
+      "id": "d6f06d08-dc7e-4fdc-9f52-6b93dfdbcfac",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4.1",
+          "mode": "list",
+          "cachedResultName": "gpt-4.1"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -20,
+        -160
+      ],
+      "id": "1685b4ae-8875-4874-951c-1392774eb9fb",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4.1",
+          "mode": "list",
+          "cachedResultName": "gpt-4.1"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1040,
+        -220
+      ],
+      "id": "130da20e-d482-4933-90c1-a46032087902",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "22afef7b-2365-4f44-bab6-fd36f791f957",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        -380
+      ],
+      "id": "03615957-4fb1-4dd9-a1c4-80ed43fc7cc2",
+      "name": "Webhook",
+      "webhookId": "22afef7b-2365-4f44-bab6-fd36f791f957"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1420,
+        -440
+      ],
+      "id": "8342c3e3-1fb8-4730-b730-c32799f4c3bb",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "305b874c-952b-476b-956f-6b088aba980a",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4f1928e5c3a4879ea2a6db249dc9b962e308bb3174b7d9b8f157abddc0d84aa1"
+  },
+  "id": "SbDpstslsxzugvrW",
+  "tags": []
+}
