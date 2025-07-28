@@ -5,7 +5,7 @@ export default function Home() {
     <main className="flex flex-col h-screen bg-background text-foreground">
       <header className="p-4 border-b shrink-0">
         <h1 className="text-2xl font-bold text-center font-headline">
-          Quickbooks Chat
+          MoneyTalk
         </h1>
       </header>
       <ChatView />

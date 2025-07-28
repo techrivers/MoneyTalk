@@ -1,4 +1,4 @@
-# **App Name**: Webhook Chat
+# **App Name**: MoneyTalk
 
 ## Core Features:
 
