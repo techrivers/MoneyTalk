@@ -1,10 +1,10 @@
-# QBO Agent - QuickBooks Online AI Chat Interface
+# MoneyTalk Agent - QuickBooks Online AI Chat Interface
 
 A modern web application that provides an intelligent chat interface for interacting with QuickBooks Online (QBO) data through natural language queries. The application acts as a bridge between users and QuickBooks API, leveraging AI to interpret user requests and generate appropriate API calls.
 
 ## 🚀 Project Overview
 
-The QBO Agent is a sophisticated chat-based application that allows users to query QuickBooks Online financial data using natural language. The system interprets user requests, converts them into appropriate QBO API calls, and presents the results in a user-friendly format.
+The MoneyTalk Agent is a sophisticated chat-based application that allows users to query QuickBooks Online financial data using natural language. The system interprets user requests, converts them into appropriate QBO API calls, and presents the results in a user-friendly format.
 
 ### Key Features
 
@@ -113,7 +113,7 @@ The application follows a multi-tier architecture:
 1. Clone the repository
 ```bash
 git clone <repository-url>
-cd qbo-agent
+cd MoneyTalk
 ```
 
 2. Install dependencies
@@ -124,7 +124,6 @@ npm install
 3. Set up environment variables
 ```bash
 NEXT_PUBLIC_WEBHOOK_URL=<your-webhook-url>
-GOOGLE_AI_API_KEY=<your-google-ai-key>
 ```
 
 4. Configure QuickBooks OAuth2 credentials in n8n
